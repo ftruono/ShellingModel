@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" remoteFilesAllowedToDisappearOnAutoupload="false">
+    <serverData>
+      <paths name="Docker Remote (9076b242-8dd7-472f-b29b-c0f55e8dbcf9)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/tmp/tmp.NZHLhTaCPX" local="$PROJECT_DIR$" />
+          </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-docker-remote" />
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-docker-remote" />
+          </excludedPaths>
+        </serverdata>
+      </paths>
+      <paths name="Remote GDB Server (32c46644-6489-43ff-8ac3-649004dba7cb)">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="Remote GDB Server (8ca31076-20f9-40c0-ae43-d75ae2991852)">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>
