@@ -48,6 +48,14 @@ void print_grid(City **grid_city, int row, int col);
 
 int calculate_offset(int proc, int x, int y, int col);
 
+void check_satisfaction_horizontal(City **grid_city, int i, int j, int pos, int *count_near, int *satisf);
+
+void check_satisfaction_vertical(City **grid_city, int i, int j, int pos, int *count_near, int *satisf);
+
+bool isInMyRange(int value, int min_range, int max_range);
+
+void check_satisfaction_oblique(City **grid_city, int i, int j, int pos_x, int pos_y, int *count_near, int *satisf);
+
 
 int main(int argc, char *argv[]) {
     int processes, rank;
@@ -259,30 +267,101 @@ void check_nearest(int proc, City **grid_city, int row, int col) {
     int min_range = calculate_offset(proc, 0, 0, col);
     for (int i = 0; i < row; ++i) {
         for (int j = 0; j < col; ++j) {
-          int pos=calculate_offset(proc,i,j,col);
-          int satisf=0;
-          int count_near=0;
-          int left=j-1;
-          if(left>0){
-              if(grid_city[i][left].locked){
-                  ++count_near;
-                  if(grid_city[i][j].status==grid_city[i][left].status){
-                      ++satisf;
-                  }
-              }
-
-          }
-          int rigth=j+1;
-            if(rigth<col){
-                ++count_near;
-                if(!grid_city[i][rigth].locked && grid_city[i][j].status==grid_city[i][left].status){
-                    ++satisf;
-                }
+            int pos = calculate_offset(proc, i, j, col);
+            int satisf = 0;
+            int count_near = 0;
+            int left = j - 1;
+            if (left > 0) {
+                check_satisfaction_horizontal(grid_city, i, j, left, &count_near, &satisf);
             }
-            //TODO check rows and obliquios
+            int rigth = j + 1;
+            if (rigth < col) {
+                check_satisfaction_horizontal(grid_city, i, j, rigth, &count_near, &satisf);
+            }
+
+            int top = pos - col;
+            if (isInMyRange(top, min_range, max_range)) {
+                int top_index = i - 1;
+                check_satisfaction_vertical(grid_city, i, j, top_index, &count_near, &satisf);
+            } else {
+                //send request to process
+            }
+            int bottom = pos + col;
+            if (isInMyRange(bottom, min_range, max_range)) {
+                int top_index = i + 1;
+                check_satisfaction_vertical(grid_city, i, j, top_index, &count_near, &satisf);
+            } else {
+                //send request to process  => >0 && <col*col
+            }
+
+            int nord_ovest = pos - col - 1;
+            if (isInMyRange(nord_ovest, min_range, max_range)) {
+                int no_x = i - 1;
+                int no_y = j - 1;
+                check_satisfaction_oblique(grid_city, i, j, no_x, no_y, &count_near, &satisf);
+            } else {
+
+            }
+            int nord_east = pos - col + 1;
+            if (isInMyRange(nord_east, min_range, max_range)) {
+                int no_x = i - 1;
+                int no_y = j + 1;
+                check_satisfaction_oblique(grid_city, i, j, no_x, no_y, &count_near, &satisf);
+            } else {
+
+            }
+
+            int south_ovest = pos + col - 1;
+            if (isInMyRange(south_ovest, min_range, max_range)) {
+                int no_x = i + 1;
+                int no_y = j - 1;
+                check_satisfaction_oblique(grid_city, i, j, no_x, no_y, &count_near, &satisf);
+            } else {
+
+            }
+            int south_east = pos + col + 1;
+            if (isInMyRange(south_east, min_range, max_range)) {
+                int no_x = i + 1;
+                int no_y = j + 1;
+                check_satisfaction_oblique(grid_city, i, j, no_x, no_y, &count_near, &satisf);
+            } else {
+
+            }
+
 
         }
     }
+}
+
+void check_satisfaction_horizontal(City **grid_city, int i, int j, int pos, int *count_near, int *satisf) {
+    if (grid_city[i][pos].locked) {
+        (*count_near)++;
+        if (grid_city[i][j].status == grid_city[i][pos].status) {
+            (*satisf)++;
+        }
+    }
+}
+
+void check_satisfaction_vertical(City **grid_city, int i, int j, int pos, int *count_near, int *satisf) {
+    if (grid_city[pos][j].locked) {
+        (*count_near)++;
+        if (grid_city[i][j].status == grid_city[pos][j].status) {
+            (*satisf)++;
+        }
+    }
+}
+
+void check_satisfaction_oblique(City **grid_city, int i, int j, int pos_x, int pos_y, int *count_near, int *satisf) {
+    if (grid_city[pos_x][pos_y].locked) {
+        (*count_near)++;
+        if (grid_city[i][j].status == grid_city[pos_x][pos_y].status) {
+            (*satisf)++;
+        }
+    }
+}
+
+bool isInMyRange(int value, int min_range, int max_range) {
+    return value >= min_range && value <= max_range;
 }
 
 int calculate_offset(int proc, int x, int y, int col) {
