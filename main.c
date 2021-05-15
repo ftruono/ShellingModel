@@ -62,6 +62,8 @@ void send_startup_information(InitializeMsg msg, int proc,
 
 InitializeMsg create_initialize_message(int row, int col, int satisfaction, int blue, int red);
 
+City **initialize_cache(int col);
+
 City **initialize_grid_city(InitializeMsg initialize_struct);
 
 void push_random_values(City **grid_city, int max_row, int col, int content_legth, enum STATUS status);
@@ -69,6 +71,11 @@ void push_random_values(City **grid_city, int max_row, int col, int content_legt
 void print_grid(City **grid_city, int row, int col);
 
 int calculate_offset(int proc, int x, int y, int col, int row);
+
+int get_process_from_offset(int offset, int row, int col);
+
+void
+do_request(int proc, City **grid_city, City **cache, int row, int col, int last_processor, MPI_Datatype mpi_city_type);
 
 void check_satisfaction_horizontal(City **grid_city, int i, int j, int pos, int *count_near, int *satisf);
 
@@ -82,8 +89,8 @@ void check_satisfaction_oblique(City **grid_city, int i, int j, int pos_x, int p
 int main(int argc, char *argv[]) {
     int processes, rank;
     int unsatisfied;
-    InitializeMsg startup_msg;
-    City **grid;
+    InitializeMsg startup_info;
+    City **grid, **cache;
     MPI_Status status_in_msg;
     MPI_Init(NULL, NULL);
     MPI_Comm_size(MPI_COMM_WORLD, &processes);
@@ -122,24 +129,24 @@ int main(int argc, char *argv[]) {
         if (excluded != 0) {
             int assigned_processes = rand() % processes;
             int temp_proc_row = splitted_row + excluded;
-            if (assigned_processes == 0) {
-                startup_msg = create_initialize_message(temp_proc_row, grid_size, satisfaction, splitted_blue,
-                                                        splitted_red);
-            } else {
-                for (int i = 1; i < processes; ++i) {
-                    send_startup_information(
-                            create_initialize_message(i == assigned_processes ? temp_proc_row : splitted_row, grid_size,
-                                                      satisfaction, splitted_blue,
-                                                      splitted_red),
-                            i,
-                            mpi_initialize_message_type
-                    );
-                }
+
+            startup_info = create_initialize_message(assigned_processes == 0 ? temp_proc_row : splitted_row, grid_size,
+                                                     satisfaction, splitted_blue,
+                                                     splitted_red);
+            for (int i = 1; i < processes; ++i) {
+                send_startup_information(
+                        create_initialize_message(i == assigned_processes ? temp_proc_row : splitted_row, grid_size,
+                                                  satisfaction, splitted_blue,
+                                                  splitted_red),
+                        i,
+                        mpi_initialize_message_type
+                );
             }
 
-        } else {
-            startup_msg = create_initialize_message(splitted_row, grid_size, satisfaction, splitted_blue,
-                                                    splitted_red); // for 1° process
+
+        } else { //nessun resto nella divisione
+            startup_info = create_initialize_message(splitted_row, grid_size, satisfaction, splitted_blue,
+                                                     splitted_red); // for 0° process
 
             for (int i = 1; i < processes; ++i) {
                 send_startup_information(
@@ -150,16 +157,19 @@ int main(int argc, char *argv[]) {
             }
         }
 
+    } else {
+        MPI_Recv(&startup_info, 1, mpi_initialize_message_type, 0, 0, MPI_COMM_WORLD, &status_in_msg);
     }
-    for (int i = 1; i < processes; ++i) {
-        MPI_Recv(&startup_msg, 1, mpi_initialize_message_type, 0, 0, MPI_COMM_WORLD, &status_in_msg);
-        grid = initialize_grid_city(startup_msg);
-        //print_grid(grid, startup_msg.row, startup_msg.col);
-        //printf("rank %d - my grid %d %d \n", rank, startup_msg.row, startup_msg.col);
-    }
+    grid = initialize_grid_city(startup_info);
+    cache = initialize_cache(startup_info.col);
+    //print_grid(grid, startup_info.row, startup_info.col);
+    //printf("rank %d - my grid %d %d \n", rank, startup_info.row, startup_info.col);
+    MPI_Barrier(MPI_COMM_WORLD);
     do {
+        do_request(rank, grid, cache, startup_info.row, startup_info.col, processes, mpi_city_type);
 
 
+        unsatisfied = 0;
     } while (unsatisfied > 0);
 
     free(grid);
@@ -282,11 +292,11 @@ void send_startup_information(InitializeMsg msg, int proc,
     MPI_Send(&msg, 1, mpi_initialize_message_type, proc, 0, MPI_COMM_WORLD);
 }
 
-//TODO empty non necessario
+
 City **initialize_grid_city(InitializeMsg initialize_struct) {
     //printf("Push random: ");
-    City **grid_city = (City **) malloc(initialize_struct.row * sizeof(City));
-    for (int i = 0; i < initialize_struct.col; ++i) {
+    City **grid_city = (City **) malloc(initialize_struct.row * sizeof(City *));
+    for (int i = 0; i < initialize_struct.row; ++i) {
         grid_city[i] = (City *) malloc(initialize_struct.col * sizeof(City));
     }
     for (int i = 0; i < initialize_struct.row; ++i) {
@@ -300,6 +310,14 @@ City **initialize_grid_city(InitializeMsg initialize_struct) {
     push_random_values(grid_city, initialize_struct.row, initialize_struct.col, initialize_struct.blue, BLUE);
 
     return grid_city;
+}
+
+City **initialize_cache(int col) {
+    City **cache = (City **) malloc(2 * sizeof(City *));
+    for (int i = 0; i < 2; ++i) {
+        cache[i] = (City *) malloc(col * sizeof(City));
+    }
+    return cache;
 }
 
 void push_random_values(City **grid_city, int max_row, int max_col, int content_legth, enum STATUS status) {
@@ -319,13 +337,43 @@ void push_random_values(City **grid_city, int max_row, int max_col, int content_
 }
 
 
-void check_nearest(int proc, City **grid_city, int row, int col, MPI_Datatype mpi_info_msg) {
+void
+do_request(int proc, City **grid_city, City **cache, int row, int col, int last_processor, MPI_Datatype mpi_city_type) { //cache[0] parte alta cache[1] parte bassa
+    MPI_Request req0, req1;
+    MPI_Request rec0, rec1;
+
+    if (proc != 0 && proc != last_processor - 1) {
+
+        MPI_Isend(grid_city[0], col - 1, mpi_city_type, proc - 1, 1, MPI_COMM_WORLD, &req0);
+        MPI_Isend(grid_city[row - 1], col - 1, mpi_city_type, proc + 1, 2, MPI_COMM_WORLD, &req1);
+        //ricezione
+        MPI_Irecv(cache[0], col - 1, mpi_city_type, proc - 1, 2, MPI_COMM_WORLD, &rec0);
+        MPI_Irecv(cache[1], col - 1, mpi_city_type, proc + 1, 1, MPI_COMM_WORLD, &rec1);
+        MPI_Wait(&rec0, MPI_STATUS_IGNORE);
+        MPI_Wait(&rec1, MPI_STATUS_IGNORE);
+        printf("in mezzo ok");
+    } else if (proc == 0) {
+        MPI_Isend(grid_city[row - 1], col - 1, mpi_city_type, proc + 1, 2, MPI_COMM_WORLD, &req1);
+        MPI_Irecv(cache[1], col - 1, mpi_city_type, proc + 1, 1, MPI_COMM_WORLD, &rec1);
+        MPI_Wait(&rec1, MPI_STATUS_IGNORE);
+        printf("first ok");
+    } else if (proc == last_processor - 1) {
+        MPI_Isend(grid_city[0], col - 1, mpi_city_type, proc - 1, 1, MPI_COMM_WORLD, &req0);
+        MPI_Irecv(cache[0], col - 1, mpi_city_type, proc - 1, 2, MPI_COMM_WORLD, &rec0);
+        MPI_Wait(&rec0, MPI_STATUS_IGNORE);
+        printf("last ok");
+    }
+
+
+}
+
+void check_nearest(int proc, City **grid_city,City **cache, int row, int col, MPI_Datatype mpi_info_msg) {
     int max_range = calculate_offset(proc, row - 1, col - 1, col, row);
     int min_range = calculate_offset(proc, 0, 0, col, row);
     int max_size = col * col;
     for (int i = 0; i < row; ++i) {
         for (int j = 0; j < col; ++j) {
-            int pos = calculate_offset(proc, i, j, col,row);
+            int pos = calculate_offset(proc, i, j, col, row);
             int satisf = 0;
             int count_near = 0;
             int left = j - 1;
@@ -342,11 +390,12 @@ void check_nearest(int proc, City **grid_city, int row, int col, MPI_Datatype mp
                 int top_index = i - 1;
                 check_satisfaction_vertical(grid_city, i, j, top_index, &count_near, &satisf);
             } else {
-                InfoMsg msg;
+                cache[0]
+                /*InfoMsg msg;
                 msg.request = REQUEST_INFO;
-
-                //come calcolo il processo dalla posizione??
-                MPI_Isend()
+                msg.pos = top;
+                int dest = get_process_from_offset(top, row, col);
+                MPI_Isend(&msg, 1, mpi_info_msg, dest, MPI_COMM_WORLD,)*/
                 //send request to process
             }
             int bottom = pos + col;
@@ -434,7 +483,19 @@ enum RANGE is_in_my_range(int value, int min_range, int max_range, int max_size)
 }
 
 int calculate_offset(int proc, int x, int y, int col, int row) {
+    col -= 1;
+    row -= 1;
     return (proc * col * row) + (x * col + y);
+}
+
+int get_process_from_offset(int offset, int row, int col) {
+    int proc = -1;
+    row -= 1;
+    col -= 1;
+    for (; offset > 0; ++proc) {
+        offset -= row * col;
+    }
+    return proc;
 }
 
 
