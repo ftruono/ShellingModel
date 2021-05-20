@@ -18,9 +18,9 @@ enum RANGE {
 };
 
 enum ALLOCATION {
-    REALLOCATED,
+    ALLOCATED,
     NOT_ALLOCATED,
-    NEW_POSITION_NEEDED
+    INVALID_DATA_ALLOCATION
 };
 
 typedef struct {
@@ -40,6 +40,7 @@ typedef struct {
 
 typedef struct {
     int original_proc;
+    int destination_proc;
     int x;
     int y;
     enum STATUS content;
@@ -80,7 +81,8 @@ int get_process_from_offset(int offset, int row, int col);
 void
 do_request(int proc, City **grid_city, City **cache, int row, int col, int last_processor, MPI_Datatype mpi_city_type);
 
-int check_nearest(int proc, City **grid_city, City **cache, int row, int col, int satisfaction, UnHappy *unhappy_list);
+int check_nearest(int proc, City **grid_city, City **cache, int row, int col, int satisfaction, UnHappy *unhappy_list,
+                  int last_process);
 
 void check_satisfaction_horizontal(City **grid_city, int i, int j, int pos, int *count_near, int *satisf);
 
@@ -100,9 +102,135 @@ check_satisfaction_oblique_on_cache(City **grid_city, City **cache, int i, int j
 void update_if_empty(int *count_near, int *satisf);
 
 
+//TODO da eliminare;
+void print_cache(City **cache, int col, int rank, int max_rank);
+
+void mock_data2x6(City **grid_city);
+
+
+void resize_unhappy(UnHappy *list);
+
+int testP0_2x6() {
+    City **grid, **cache;
+    UnHappy *unhappy_list;
+    cache = initialize_cache(6);
+
+    grid = (City **) malloc(2 * sizeof(City *));
+    for (int i = 0; i < 2; ++i) {
+        grid[i] = (City *) malloc(6 * sizeof(City));
+    }
+    mock_data2x6(grid);
+
+
+    City red;
+    red.satisfacion = 30;
+    red.locked = true;
+    red.status = RED;
+    City blue;
+    blue.satisfacion = 40;
+    blue.locked = true;
+    blue.status = BLUE;
+    City empty;
+    empty.satisfacion = 0;
+    empty.locked = false;
+    empty.status = EMPTY;
+
+    cache[1][0] = red;
+    cache[1][1] = red;
+    cache[1][2] = empty;
+    cache[1][3] = empty;
+    cache[1][4] = blue;
+    cache[1][5] = empty;
+
+    check_nearest(0, grid, cache, 2, 6,
+                  50, unhappy_list, 3);
+}
+
+
+int testP1_2x6() {
+    City **grid, **cache;
+    UnHappy *unhappy_list;
+    cache = initialize_cache(6);
+
+    grid = (City **) malloc(2 * sizeof(City *));
+    for (int i = 0; i < 2; ++i) {
+        grid[i] = (City *) malloc(6 * sizeof(City));
+    }
+    mock_data2x6(grid);
+
+
+    City red;
+    red.satisfacion = 30;
+    red.locked = true;
+    red.status = RED;
+    City blue;
+    blue.satisfacion = 40;
+    blue.locked = true;
+    blue.status = BLUE;
+    City empty;
+    empty.satisfacion = 0;
+    empty.locked = false;
+    empty.status = EMPTY;
+
+    cache[0][0] = red;
+    cache[0][1] = red;
+    cache[0][2] = empty;
+    cache[0][3] = empty;
+    cache[0][4] = blue;
+    cache[0][5] = empty;
+
+    cache[1][0] = red;
+    cache[1][1] = red;
+    cache[1][2] = empty;
+    cache[1][3] = blue;
+    cache[1][4] = red;
+    cache[1][5] = red;
+
+    check_nearest(1, grid, cache, 2, 6,
+                  50, unhappy_list, 3);
+}
+
+int testP2_2x6() {
+    City **grid, **cache;
+    UnHappy *unhappy_list;
+    cache = initialize_cache(6);
+
+    grid = (City **) malloc(2 * sizeof(City *));
+    for (int i = 0; i < 2; ++i) {
+        grid[i] = (City *) malloc(6 * sizeof(City));
+    }
+    mock_data2x6(grid);
+
+
+    City red;
+    red.satisfacion = 30;
+    red.locked = true;
+    red.status = RED;
+    City blue;
+    blue.satisfacion = 40;
+    blue.locked = true;
+    blue.status = BLUE;
+    City empty;
+    empty.satisfacion = 0;
+    empty.locked = false;
+    empty.status = EMPTY;
+
+    cache[0][0] = red;
+    cache[0][1] = red;
+    cache[0][2] = empty;
+    cache[0][3] = empty;
+    cache[0][4] = blue;
+    cache[0][5] = empty;
+
+    check_nearest(2, grid, cache, 2, 6,
+                  50, unhappy_list, 3);
+}
+
+
 int main(int argc, char *argv[]) {
+
     int processes, rank;
-    int unsatisfied;
+    int unsatisfied = 0;
     InitializeMsg startup_info;
     City **grid, **cache;
     UnHappy *unhappy_list;
@@ -177,25 +305,26 @@ int main(int argc, char *argv[]) {
     }
     grid = initialize_grid_city(startup_info);
     cache = initialize_cache(startup_info.col);
-    printf("rank %d - my grid %d %d \n", rank, startup_info.row, startup_info.col);
-    print_grid(grid, startup_info.row, startup_info.col);
+    //printf("rank %d - my grid %d %d \n", rank, startup_info.row, startup_info.col);
+    //print_grid(grid, startup_info.row, startup_info.col);
     MPI_Barrier(MPI_COMM_WORLD);
     do {
         do_request(rank, grid, cache, startup_info.row, startup_info.col, processes, mpi_city_type);
+
         unsatisfied = check_nearest(rank, grid, cache, startup_info.row, startup_info.col,
-                                    startup_info.satisfation, unhappy_list);
+                                    startup_info.satisfation, unhappy_list, processes);
         MPI_Allreduce(&unsatisfied, &unsatisfied, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
         MPI_Barrier(MPI_COMM_WORLD);
-
+        resize_unhappy(unhappy_list);
         unsatisfied = 0;
-        free(unhappy_list);
+        //free(unhappy_list);
     } while (unsatisfied > 0);
 
     free(grid);
     MPI_Type_free(&mpi_city_type);
     MPI_Type_free(&mpi_initialize_message_type);
     MPI_Type_free(&mpi_info_msg_type);
-    MPI_Finalize();
+    //MPI_Finalize();
     return 0;
 }
 
@@ -219,7 +348,7 @@ MPI_Datatype make_type_for_initialize_msg() {
 
 
 MPI_Datatype make_type_for_city() {
-    MPI_Datatype types[3] = {MPI_UNSIGNED_CHAR, MPI_C_BOOL, MPI_FLOAT};
+    MPI_Datatype types[3] = {MPI_INT, MPI_C_BOOL, MPI_FLOAT};
     MPI_Datatype mpi_city;
     MPI_Aint offsets[3];
     int blocklengths[3] = {1, 1, 1};
@@ -282,6 +411,20 @@ void handle_input(char *arg, int *store, bool isGrid) {
     }
 }
 
+
+void print_cache(City **cache, int col, int rank, int max_rank) {
+    if (rank == 0) return;
+    if (rank == max_rank - 1) return;
+    printf("rank : %d e cache \n", rank);
+    for (int i = 0; i < 2; ++i) {
+
+        for (int j = 0; j < col; ++j) {
+            printf("%c", decode_enum(cache[i][j].status));
+        }
+        printf("\n");
+    }
+}
+
 /*
 int *reduceProcesses(int processes, int grid_size) {
     while (processes >= grid_size) {
@@ -323,11 +466,13 @@ City **initialize_grid_city(InitializeMsg initialize_struct) {
         for (int j = 0; j < initialize_struct.col; ++j) {
             grid_city[i][j].status = EMPTY;
             grid_city[i][j].locked = false;
+            grid_city[i][j].satisfacion = 0;
         }
     }
 
-    push_random_values(grid_city, initialize_struct.row, initialize_struct.col, initialize_struct.red, RED);
-    push_random_values(grid_city, initialize_struct.row, initialize_struct.col, initialize_struct.blue, BLUE);
+    mock_data2x6(grid_city);
+    //push_random_values(grid_city, initialize_struct.row, initialize_struct.col, initialize_struct.red, RED);
+    //push_random_values(grid_city, initialize_struct.row, initialize_struct.col, initialize_struct.blue, BLUE);
 
     return grid_city;
 }
@@ -338,6 +483,36 @@ City **initialize_cache(int col) {
         cache[i] = (City *) malloc(col * sizeof(City));
     }
     return cache;
+}
+
+void mock_data2x6(City **grid_city) {
+
+    City red;
+    red.satisfacion = 30;
+    red.locked = true;
+    red.status = RED;
+    City blue;
+    blue.satisfacion = 40;
+    blue.locked = true;
+    blue.status = BLUE;
+    City empty;
+    empty.satisfacion = 0;
+    empty.locked = false;
+    empty.status = EMPTY;
+
+    grid_city[0][0] = red;
+    grid_city[0][1] = red;
+    grid_city[0][2] = empty;
+    grid_city[0][3] = empty;
+    grid_city[0][4] = blue;
+    grid_city[0][5] = red;
+
+    grid_city[1][0] = blue;
+    grid_city[1][1] = blue;
+    grid_city[1][2] = blue;
+    grid_city[1][3] = red;
+    grid_city[1][4] = red;
+    grid_city[1][5] = red;
 }
 
 void push_random_values(City **grid_city, int max_row, int max_col, int content_legth, enum STATUS status) {
@@ -360,129 +535,151 @@ void push_random_values(City **grid_city, int max_row, int max_col, int content_
 void
 do_request(int proc, City **grid_city, City **cache, int row, int col, int last_processor,
            MPI_Datatype mpi_city_type) { //cache[0] parte alta cache[1] parte bassa
-    MPI_Request req0, req1;
-    MPI_Request rec0, rec1;
+    MPI_Status status1, status2;
     if (last_processor > 1) {
-        if (proc != 0 && proc != last_processor - 1) {
-            MPI_Isend(grid_city[0], col - 1, mpi_city_type, proc - 1, 1, MPI_COMM_WORLD, &req0);
-            MPI_Isend(grid_city[row - 1], col - 1, mpi_city_type, proc + 1, 2, MPI_COMM_WORLD, &req1);
-            //ricezione
-            MPI_Irecv(cache[0], col - 1, mpi_city_type, proc - 1, 2, MPI_COMM_WORLD, &rec0);
-            MPI_Irecv(cache[1], col - 1, mpi_city_type, proc + 1, 1, MPI_COMM_WORLD, &rec1);
-            MPI_Wait(&rec0, MPI_STATUS_IGNORE);
-            MPI_Wait(&rec1, MPI_STATUS_IGNORE);
-        } else if (proc == 0) {
-            MPI_Isend(grid_city[row - 1], col - 1, mpi_city_type, proc + 1, 2, MPI_COMM_WORLD, &req1);
-            MPI_Irecv(cache[1], col - 1, mpi_city_type, proc + 1, 1, MPI_COMM_WORLD, &rec1);
-            MPI_Wait(&rec1, MPI_STATUS_IGNORE);
+        if (proc == 0) {
+            MPI_Send(grid_city[row - 1], col, mpi_city_type, proc + 1, 2, MPI_COMM_WORLD);
+            MPI_Recv(cache[1], col, mpi_city_type, proc + 1, 1, MPI_COMM_WORLD, &status1);
+            //MPI_Wait(&req1, MPI_STATUS_IGNORE);
+
+            /*
+            printf("cache proc 0 \n");
+            for (int i = 0; i < col; ++i) {
+                printf("%c ", decode_enum(cache[1][i].status));
+            }
+            printf("\n");
+             */
         } else if (proc == last_processor - 1) {
-            MPI_Isend(grid_city[0], col - 1, mpi_city_type, proc - 1, 1, MPI_COMM_WORLD, &req0);
-            MPI_Irecv(cache[0], col - 1, mpi_city_type, proc - 1, 2, MPI_COMM_WORLD, &rec0);
-            MPI_Wait(&rec0, MPI_STATUS_IGNORE);
+            MPI_Send(grid_city[0], col, mpi_city_type, proc - 1, 1, MPI_COMM_WORLD);
+            MPI_Recv(cache[0], col, mpi_city_type, proc - 1, 2, MPI_COMM_WORLD, &status1);
+            /*for (int i = 0; i < col; ++i) {
+                printf("%d %2f %c", cache[0][i].locked, cache[0][i].satisfacion, decode_enum(cache[0][i].status));
+            }
+            printf("\n");
+             */
+        } else {
+            MPI_Send(grid_city[0], col, mpi_city_type, proc - 1, 1, MPI_COMM_WORLD);
+            MPI_Send(grid_city[row - 1], col, mpi_city_type, proc + 1, 2, MPI_COMM_WORLD);
+            //ricezione
+            MPI_Recv(cache[0], col, mpi_city_type, proc - 1, 2, MPI_COMM_WORLD, &status1);
+            MPI_Recv(cache[1], col, mpi_city_type, proc + 1, 1, MPI_COMM_WORLD, &status2);
+            /*printf("cache di %d \n", proc);
+            for (int i = 0; i < col; ++i) {
+                printf("%c", decode_enum(cache[0][i].status));
+            }
+            printf("\n");
+            for (int i = 0; i < col; ++i) {
+                printf("%c", decode_enum(cache[1][i].status));
+            }*/
+
+
         }
     }
 
 
 }
 
-int check_nearest(int proc, City **grid_city, City **cache, int row, int col, int satisfaction, UnHappy *unhappy_list) {
-    int max_range = calculate_offset(proc, row - 1, col - 1, col, row);
-    int min_range = calculate_offset(proc, 0, 0, col, row);
-    printf("rank %d ---- max_range %d --- min_range %d\n", proc, max_range, min_range);
-    int max_size = col * col;
+int check_nearest(int proc, City **grid_city, City **cache, int row, int col, int satisfaction, UnHappy *unhappy_list,
+                  int last_process) {
     int size = row * col / 2;
     int unsatisfaied = 0;
     unhappy_list = (UnHappy *) malloc(sizeof(UnHappy) * size);
     for (int i = 0; i < row; ++i) {
         for (int j = 0; j < col; ++j) {
-            int pos = calculate_offset(proc, i, j, col, row);
-            int satisf = 0;
-            int count_near = 0;
-            int left = j - 1;
-            if (left > 0) {
-                check_satisfaction_horizontal(grid_city, i, j, left, &count_near, &satisf);
-            }
-            int rigth = j + 1;
-            if (rigth < col) {
-                check_satisfaction_horizontal(grid_city, i, j, rigth, &count_near, &satisf);
-            }
+            if (grid_city[i][j].status != EMPTY) {
+                int satisf = 0;
+                int count_near = 0;
+                int left = j - 1;
+                if (left >= 0) {
+                    check_satisfaction_horizontal(grid_city, i, j, left, &count_near, &satisf);
+                }
+                int rigth = j + 1;
+                if (rigth < col) {
+                    check_satisfaction_horizontal(grid_city, i, j, rigth, &count_near, &satisf);
+                }
 
-            int top = pos - col;
-            enum RANGE top_range = is_in_my_range(top, min_range, max_range, max_size);
-            if (top_range == IN_MY_RANGE) {
-                int top_index = i - 1;
-                check_satisfaction_vertical(grid_city, i, j, top_index, &count_near, &satisf);
-            } else if (top_range == OUT_OF_RANGE) {
-                check_satisfaction_vertical_on_cache(grid_city, cache, i, j, 0, &count_near, &satisf);
-            }
+                int top = i - 1;
+                if (top >= 0) {
+                    check_satisfaction_vertical(grid_city, i, j, top, &count_near, &satisf);
+                } else {
+                    if (proc != 0) {
+                        check_satisfaction_vertical_on_cache(grid_city, cache, i, j, 0, &count_near, &satisf);
+                    }
+                }
 
-            int bottom = pos + col;
-            enum RANGE bottom_range = is_in_my_range(bottom, min_range, max_range, max_size);
-            if (bottom_range == IN_MY_RANGE) {
-                int top_index = i + 1;
-                check_satisfaction_vertical(grid_city, i, j, top_index, &count_near, &satisf);
-            } else if (bottom_range == OUT_OF_RANGE) {
-                check_satisfaction_vertical_on_cache(grid_city, cache, i, j, 1, &count_near, &satisf);
-            }
 
-            int nord_ovest = pos - col - 1;
-            enum RANGE nord_ovest_range = is_in_my_range(nord_ovest, min_range, max_range, max_size);
-            if (nord_ovest_range == IN_MY_RANGE) {
+                int bottom = i + 1;
+                if (bottom < row) {
+                    check_satisfaction_vertical(grid_city, i, j, bottom, &count_near, &satisf);
+                } else {
+                    if (proc != last_process - 1) {
+                        check_satisfaction_vertical_on_cache(grid_city, cache, i, j, 1, &count_near, &satisf);
+                    }
+                }
+
+
                 int no_x = i - 1;
                 int no_y = j - 1;
-                check_satisfaction_oblique(grid_city, i, j, no_x, no_y, &count_near, &satisf);
-            } else if (nord_ovest_range == OUT_OF_RANGE) {
-                check_satisfaction_oblique_on_cache(grid_city, cache, i, j, 0, j - 1, &count_near, &satisf);
-            }
-            int nord_east = pos - col + 1;
-            enum RANGE nord_east_range = is_in_my_range(nord_east, min_range, max_range, max_size);
-            if (nord_east_range == IN_MY_RANGE) {
-                int no_x = i - 1;
-                int no_y = j + 1;
-                check_satisfaction_oblique(grid_city, i, j, no_x, no_y, &count_near, &satisf);
-            } else if (nord_east_range == OUT_OF_RANGE) {
-                check_satisfaction_oblique_on_cache(grid_city, cache, i, j, 0, j + 1, &count_near, &satisf);
-            }
+                if (no_x >= 0 && no_y >= 0) {
+                    check_satisfaction_oblique(grid_city, i, j, no_x, no_y, &count_near, &satisf);
+                } else {
+                    if (no_y >= 0 && proc != 0) {
+                        check_satisfaction_oblique_on_cache(grid_city, cache, i, j, 0, no_y, &count_near, &satisf);
+                    }
+                }
 
-            int south_ovest = pos + col - 1;
-            enum RANGE south_ovest_range = is_in_my_range(south_ovest, min_range, max_range, max_size);
-            if (south_ovest_range == IN_MY_RANGE) {
-                int no_x = i + 1;
-                int no_y = j - 1;
-                check_satisfaction_oblique(grid_city, i, j, no_x, no_y, &count_near, &satisf);
-            } else if (south_ovest_range == OUT_OF_RANGE) {
-                check_satisfaction_oblique_on_cache(grid_city, cache, i, j, 1, j - 1, &count_near, &satisf);
+                int ne_x = i - 1;
+                int ne_y = j + 1;
+                if (ne_x >= 0 && ne_y < col) {
+                    check_satisfaction_oblique(grid_city, i, j, ne_x, ne_y, &count_near, &satisf);
+                } else {
+                    if (ne_y < col && proc != 0)
+                        check_satisfaction_oblique_on_cache(grid_city, cache, i, j, 0, ne_y, &count_near, &satisf);
+                }
+
+
+                int so_x = i + 1;
+                int so_y = j - 1;
+                if (so_x < row && so_y >= 0) {
+                    check_satisfaction_oblique(grid_city, i, j, so_x, so_y, &count_near, &satisf);
+                } else {
+                    if (so_y >= 0 && proc != last_process - 1)
+                        check_satisfaction_oblique_on_cache(grid_city, cache, i, j, 1, so_y, &count_near, &satisf);
+                }
+
+
+                int se_x = i + 1;
+                int se_y = j + 1;
+                if (se_x < row && se_y < col) {
+                    check_satisfaction_oblique(grid_city, i, j, se_x, se_y, &count_near, &satisf);
+                } else {
+                    if (se_y < col && proc != last_process - 1)
+                        check_satisfaction_oblique_on_cache(grid_city, cache, i, j, 1, se_y, &count_near, &satisf);
+                }
+
+                float sats = (float) satisf / count_near;
+                grid_city[i][j].satisfacion = sats * 100;
+                printf("%d %d %d : %f  count: %d e satisf %d \n", proc, i, j, grid_city[i][j].satisfacion, count_near,
+                       satisf);
+                if ((int) grid_city[i][j].satisfacion < satisfaction) {
+                    UnHappy *unHappy = (UnHappy *) malloc(sizeof(UnHappy));
+                    unHappy->content = grid_city[i][j].status;
+                    unHappy->x = i;
+                    unHappy->y = j;
+                    unHappy->allocation_result = NOT_ALLOCATED;
+                    unHappy->original_proc = proc;
+                    //TODO assegna il processo dove andrà
+                    if (unsatisfaied >= size) {
+                        unhappy_list = (UnHappy *) realloc(unhappy_list, sizeof(UnHappy) * row * col);
+                    }
+                    unhappy_list[unsatisfaied++] = *unHappy;
+                }
             }
-            int south_east = pos + col + 1;
-            enum RANGE south_east_range = is_in_my_range(south_east, min_range, max_range, max_size);
-            if (south_east_range == IN_MY_RANGE) {
-                int no_x = i + 1;
-                int no_y = j + 1;
-                check_satisfaction_oblique(grid_city, i, j, no_x, no_y, &count_near, &satisf);
-            } else if (south_east_range == OUT_OF_RANGE) {
-                check_satisfaction_oblique_on_cache(grid_city, cache, i, j, 1, j + 1, &count_near, &satisf);
-            }
-            float sats = (float) satisf / count_near;
-            grid_city[i][j].satisfacion = sats * 100;
-            /*
-            if ((int) grid_city[i][j].satisfacion < satisfaction) {
-                UnHappy *unHappy = (UnHappy *) malloc(sizeof(UnHappy));
-                unHappy->content = grid_city[i][j].status;
-                unHappy->x = i;
-                unHappy->y = j;
-                unHappy->allocation_result = NOT_ALLOCATED;
-                unHappy->original_proc = proc;
-                unhappy_list[unsatisfaied++] = *unHappy;
-                //free(unHappy);
-            }
-*/
         }
     }
-    //printf("%d\n", unhappy_list[0].x);
     return unsatisfaied;
 }
 
-//TODO non tiene conto che la cella che sta analizzando può essere anche vuota !BUG
 void check_satisfaction_horizontal(City **grid_city, int i, int j, int pos, int *count_near, int *satisf) {
     if (grid_city[i][pos].locked) {
         (*count_near)++;
@@ -533,7 +730,7 @@ check_satisfaction_oblique_on_cache(City **grid_city, City **cache, int i, int j
                                     int *satisf) {
     if (cache[pos_x][pos_y].locked) {
         (*count_near)++;
-        if (grid_city[i][j].status == grid_city[pos_x][pos_y].status) {
+        if (grid_city[i][j].status == cache[pos_x][pos_y].status) {
             (*satisf)++;
         }
     } else {
@@ -587,6 +784,17 @@ char decode_enum(enum STATUS status) {
         case RED:
             return 'R';
         case EMPTY:
-            return ' ';
+            return 'E';
+        default:
+            return 'X';
+    }
+}
+
+void resize_unhappy(UnHappy *list, int tot_unsadisfied, int rank) {
+    list = realloc(list, sizeof(UnHappy) * tot_unsadisfied);
+    for (int i = 0; i < tot_unsadisfied; ++i) {
+        if (list[i].original_proc != rank) {
+            list[i].allocation_result = INVALID_DATA_ALLOCATION;
+        }
     }
 }
