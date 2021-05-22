@@ -39,6 +39,7 @@ typedef struct {
     int destination_proc;
     int x;
     int y;
+    int last_edit_by;
     enum STATUS content;
     enum ALLOCATION allocation_result;
 } UnHappy;
@@ -66,7 +67,9 @@ City **initialize_cache(int col);
 
 City **initialize_grid_city(InitializeMsg initialize_struct);
 
-UnHappy *initialize_unHappy(int size);
+UnHappy *initialize_un_happy(int size);
+
+void default_un_happy_values(UnHappy *list, int start, int size);
 
 void push_random_values(City **grid_city, int max_row, int col, int content_legth, enum STATUS status);
 
@@ -79,8 +82,9 @@ int get_process_from_offset(int offset, int row, int col);
 void
 do_request(int proc, City **grid_city, City **cache, int row, int col, int last_processor, MPI_Datatype mpi_city_type);
 
-int check_nearest(int proc, City **grid_city, City **cache, int row, int col, int satisfaction, UnHappy *unhappy_list,
-                  int last_process);
+int
+check_nearest(int proc, City **grid_city, City **cache, int row, int col, int satisfaction, UnHappy *unhappy_list,
+              int last_process);
 
 void check_satisfaction_horizontal(City **grid_city, int i, int j, int pos, int *count_near, int *satisf);
 
@@ -105,14 +109,26 @@ void print_cache(City **cache, int col, int rank, int max_rank);
 
 void mock_data2x6(City **grid_city);
 
+void mock_data4x4(City **grid_city);
 
-void resize_unhappy(UnHappy *list, int tot_unsadisfied, int rank);
+void mock_data2x4(City **grid_city);
 
-void send_broadcast_unhappy(UnHappy *list, int rank, int processes, int tot_unsadisfied, MPI_Datatype mpi_unhappy);
 
+void resize_unhappy(UnHappy **list, int tot_unsadisfied, int local_unsadisfied, int rank);
+
+void send_broadcast_unhappy(UnHappy *list, int rank, int processes, int size, MPI_Datatype mpi_unhappy);
+
+
+UnHappy *
+receive_broadcast_unhappy(UnHappy *list, int unsatisfied, int rank, int processes,
+                          MPI_Datatype mpi_unhappy);
 
 void
-receive_broadcast_unhappy(UnHappy *unhappy_list, int unsatisfied, int rank, int processes, MPI_Datatype mpi_unhappy);
+receive_broadcast_unhappy_in_place(UnHappy *total_proc, int unsatisfied, int rank, int processes,
+                                   MPI_Datatype mpi_unhappy);
+
+UnHappy *gather_unhappy(UnHappy *list_to_send, int unsatisfied, int processes,
+                        MPI_Datatype mpi_unhappy);
 
 void search_first_empty(City **grid_city, int row, int col, int *x, int *y);
 
@@ -120,6 +136,15 @@ void try_to_move(UnHappy *unhappy_list, City **grid_city, int rank, int unsatisf
 
 int update_with_empty_space(UnHappy *unhappy_list, City **grid_city, int rank, int unsatisfied, int processes);
 
+void syncronized_unhappy(UnHappy *total_proc, int unsatisfied, int processes, MPI_Datatype mpi_unhappy);
+
+void commit_difference(UnHappy *total_proc, UnHappy *temp, int size, int rank);
+
+void clear_memory(City **grid, City **cache, int row);
+
+
+/*
+ TESTING
 int testP0_2x6() {
     City **grid, **cache;
     UnHappy *unhappy_list;
@@ -236,11 +261,32 @@ int testP2_2x6() {
                   50, unhappy_list, 3);
 }
 
+ */
+
+
+int test_resize() {
+    UnHappy *test = initialize_un_happy(5);
+    resize_unhappy(&test, 15, 5, 0);
+    return 0;
+}
+
+//TODO delete
+char decode_allocation(enum ALLOCATION allocation) {
+    switch (allocation) {
+        case NOT_ALLOCATED:
+            return 'N';
+        case ALLOCATED:
+            return 'A';
+        case INVALID:
+            return 'X';
+    }
+}
 
 int main(int argc, char *argv[]) {
 
     int processes, rank;
-    int unsatisfied = 0;
+    int local_unsatisfied = 0;
+    int tot_unsadisfied = 0;
     InitializeMsg startup_info;
     City **grid, **cache;
     UnHappy *unhappy_list;
@@ -252,7 +298,6 @@ int main(int argc, char *argv[]) {
     MPI_Datatype mpi_initialize_message_type = make_type_for_initialize_msg();
     MPI_Datatype mpi_city_type = make_type_for_city();
     MPI_Datatype mpi_unhappy = make_type_for_unhappy();
-
     if (rank == 0) {
         int grid_size, red_pop, blue_pop, satisfaction, empty;
 
@@ -313,40 +358,57 @@ int main(int argc, char *argv[]) {
     } else {
         MPI_Recv(&startup_info, 1, mpi_initialize_message_type, 0, 0, MPI_COMM_WORLD, &status_in_msg);
     }
+
     grid = initialize_grid_city(startup_info);
     cache = initialize_cache(startup_info.col);
     //printf("rank %d - my grid %d %d \n", rank, startup_info.row, startup_info.col);
     //print_grid(grid, startup_info.row, startup_info.col);
     MPI_Barrier(MPI_COMM_WORLD);
     do {
-        unhappy_list = initialize_unHappy(startup_info.col);
+        //TODO BUG: memory leak nella creazione di unhappy list!
+        unhappy_list = initialize_un_happy(startup_info.col * startup_info.row);
         do_request(rank, grid, cache, startup_info.row, startup_info.col, processes, mpi_city_type);
 
-        unsatisfied = check_nearest(rank, grid, cache, startup_info.row, startup_info.col,
-                                    startup_info.satisfation, unhappy_list, processes);
-        MPI_Allreduce(&unsatisfied, &unsatisfied, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-        printf("non soddisfatti : %d \n", unsatisfied);
-        resize_unhappy(unhappy_list, unsatisfied, rank);
+        local_unsatisfied = check_nearest(rank, grid, cache, startup_info.row, startup_info.col,
+                                          startup_info.satisfation, unhappy_list, processes);
+        MPI_Allreduce(&local_unsatisfied, &tot_unsadisfied, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+        printf("rank %d - non soddisfatti locali: %d - non soddisfatti totali %d \n", rank, local_unsatisfied,
+               tot_unsadisfied);
+        resize_unhappy(&unhappy_list, tot_unsadisfied, local_unsatisfied, rank);
+
+
+        UnHappy *unHappy_all_proc = gather_unhappy(unhappy_list, tot_unsadisfied, processes, mpi_unhappy);
+
+
         MPI_Barrier(MPI_COMM_WORLD);
 
-        send_broadcast_unhappy(unhappy_list, rank, processes, unsatisfied, mpi_unhappy);
-        receive_broadcast_unhappy(unhappy_list, unsatisfied, rank, processes, mpi_unhappy);
+
+        /*printf("start cycle \n");*/
+        //TODO riportare a come era
 
         do {
-            try_to_move(unhappy_list, grid, rank, unsatisfied, processes, startup_info.row, startup_info.col);
-            send_broadcast_unhappy(unhappy_list, rank, processes, unsatisfied, mpi_unhappy);
-            receive_broadcast_unhappy(unhappy_list, unsatisfied, rank, processes, mpi_unhappy);
-        } while (update_with_empty_space(unhappy_list, grid, rank, unsatisfied, processes) > 0);
+            //printf("rank %d ---print \n", rank);
+            //print_grid(grid, startup_info.row, startup_info.col);
+            try_to_move(unHappy_all_proc, grid, rank, tot_unsadisfied, processes, startup_info.row, startup_info.col);
+            send_broadcast_unhappy(unHappy_all_proc, rank, processes, tot_unsadisfied * processes, mpi_unhappy);
+            receive_broadcast_unhappy_in_place(unHappy_all_proc, tot_unsadisfied, rank, processes, mpi_unhappy);
+            //printf("try to move \n");
+        } while (update_with_empty_space(unHappy_all_proc, grid, rank, tot_unsadisfied, processes) > 0);
 
+        MPI_Barrier(MPI_COMM_WORLD);
         free(unhappy_list);
-        //unsatisfied = 0;
-    } while (unsatisfied > 0);
+        free(unHappy_all_proc);
+    } while (tot_unsadisfied > 0);
 
-    free(grid);
+    printf("finito \n");
+    printf("[RANK %d] - my grid %d %d \n", rank, startup_info.row, startup_info.col);
+    print_grid(grid, startup_info.row, startup_info.col);
+
+    clear_memory(grid, cache, startup_info.row);
     MPI_Type_free(&mpi_city_type);
     MPI_Type_free(&mpi_initialize_message_type);
     MPI_Type_free(&mpi_unhappy);
-    //MPI_Finalize();
+    MPI_Finalize();
     return 0;
 }
 
@@ -385,18 +447,19 @@ MPI_Datatype make_type_for_city() {
 }
 
 MPI_Datatype make_type_for_unhappy() {
-    MPI_Datatype types[6] = {MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT};
+    MPI_Datatype types[7] = {MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT, MPI_INT};
     MPI_Datatype mpi_unhappy;
-    MPI_Aint offsets[6];
-    int block_lengths[6] = {1, 1, 1, 1, 1, 1};
+    MPI_Aint offsets[7];
+    int block_lengths[7] = {1, 1, 1, 1, 1, 1, 1};
     offsets[0] = offsetof(UnHappy, original_proc);
     offsets[1] = offsetof(UnHappy, destination_proc);
     offsets[2] = offsetof(UnHappy, x);
     offsets[3] = offsetof(UnHappy, y);
-    offsets[4] = offsetof(UnHappy, content);
-    offsets[5] = offsetof(UnHappy, allocation_result);
+    offsets[4] = offsetof(UnHappy, last_edit_by);
+    offsets[5] = offsetof(UnHappy, content);
+    offsets[6] = offsetof(UnHappy, allocation_result);
 
-    MPI_Type_create_struct(6, block_lengths, offsets, types, &mpi_unhappy);
+    MPI_Type_create_struct(7, block_lengths, offsets, types, &mpi_unhappy);
     MPI_Type_commit(&mpi_unhappy);
 
     return mpi_unhappy;
@@ -493,8 +556,9 @@ City **initialize_grid_city(InitializeMsg initialize_struct) {
             grid_city[i][j].satisfacion = 0;
         }
     }
-
-    mock_data2x6(grid_city);
+    mock_data2x4(grid_city);
+    //mock_data2x6(grid_city);
+    //mock_data4x4(grid_city);
     //push_random_values(grid_city, initialize_struct.row, initialize_struct.col, initialize_struct.red, RED);
     //push_random_values(grid_city, initialize_struct.row, initialize_struct.col, initialize_struct.blue, BLUE);
 
@@ -509,17 +573,22 @@ City **initialize_cache(int col) {
     return cache;
 }
 
-UnHappy *initialize_unHappy(int size) {
+UnHappy *initialize_un_happy(int size) {
     UnHappy *list = (UnHappy *) malloc(size * sizeof(UnHappy));
-    for (int i = 0; i < size; ++i) {
+    default_un_happy_values(list, 0, size);
+    return list;
+}
+
+void default_un_happy_values(UnHappy *list, int start, int size) {
+    for (int i = start; i < size; ++i) {
         list[i].original_proc = -1;
         list[i].destination_proc = -1;
         list[i].allocation_result = INVALID;
         list[i].content = EMPTY;
-        list[i].x = 0;
-        list[i].y = 0;
+        list[i].x = -1;
+        list[i].y = -1;
+        list[i].last_edit_by = -1;
     }
-    return list;
 }
 
 void mock_data2x6(City **grid_city) {
@@ -552,6 +621,67 @@ void mock_data2x6(City **grid_city) {
     grid_city[1][5] = red;
 }
 
+void mock_data2x4(City **grid_city) {
+
+    City red;
+    red.satisfacion = 30;
+    red.locked = true;
+    red.status = RED;
+    City blue;
+    blue.satisfacion = 40;
+    blue.locked = true;
+    blue.status = BLUE;
+    City empty;
+    empty.satisfacion = 0;
+    empty.locked = false;
+    empty.status = EMPTY;
+
+    grid_city[0][0] = red;
+    grid_city[0][1] = empty;
+    grid_city[0][2] = empty;
+    grid_city[0][3] = blue;
+
+    grid_city[1][0] = blue;
+    grid_city[1][1] = blue;
+    grid_city[1][2] = red;
+    grid_city[1][3] = empty;
+}
+
+void mock_data4x4(City **grid_city) {
+    City red;
+    red.satisfacion = 30;
+    red.locked = true;
+    red.status = RED;
+    City blue;
+    blue.satisfacion = 40;
+    blue.locked = true;
+    blue.status = BLUE;
+    City empty;
+    empty.satisfacion = 0;
+    empty.locked = false;
+    empty.status = EMPTY;
+
+    grid_city[0][0] = red;
+    grid_city[0][1] = empty;
+    grid_city[0][2] = empty;
+    grid_city[0][3] = blue;
+
+    grid_city[1][0] = blue;
+    grid_city[1][1] = blue;
+    grid_city[1][2] = red;
+    grid_city[1][3] = empty;
+
+    grid_city[2][0] = blue;
+    grid_city[2][1] = red;
+    grid_city[2][2] = red;
+    grid_city[2][3] = blue;
+
+    grid_city[3][0] = empty;
+    grid_city[3][1] = red;
+    grid_city[3][2] = empty;
+    grid_city[3][3] = empty;
+}
+
 void push_random_values(City **grid_city, int max_row, int max_col, int content_legth, enum STATUS status) {
     int next = content_legth;
     while (next > 0) {
@@ -560,6 +690,7 @@ void push_random_values(City **grid_city, int max_row, int max_col, int content_
         if (!grid_city[row][col].locked) {
             grid_city[row][col].status = status;
             grid_city[row][col].locked = (status != EMPTY);
+            grid_city[row][col].satisfacion = 0;
             --next;
         }
 
@@ -619,7 +750,7 @@ do_request(int proc, City **grid_city, City **cache, int row, int col, int last_
 int
 check_nearest(int proc, City **grid_city, City **cache, int row, int col, int satisfaction, UnHappy *unhappy_list,
               int last_process) {
-    int size = col;
+    int size = col * row;
     int unsatisfaied = 0;
     for (int i = 0; i < row; ++i) {
         for (int j = 0; j < col; ++j) {
@@ -704,14 +835,12 @@ check_nearest(int proc, City **grid_city, City **cache, int row, int col, int sa
                     unHappy.content = grid_city[i][j].status;
                     unHappy.x = i;
                     unHappy.y = j;
+                    unHappy.last_edit_by = -1;
                     unHappy.allocation_result = NOT_ALLOCATED;
                     unHappy.original_proc = proc;
                     unHappy.destination_proc = rand() % last_process;
-                    if (unsatisfaied >= size) {
-                        size *= 2;
-                        unhappy_list = (UnHappy *) realloc(unhappy_list, sizeof(UnHappy) * size);
-                    }
                     unhappy_list[unsatisfaied++] = unHappy;
+                    //printf("insodisfatto %d (%d-%d) sat: %2.f \n", unsatisfaied, i, j, grid_city[i][j].satisfacion);
                 }
             }
         }
@@ -834,41 +963,89 @@ char decode_enum(enum STATUS status) {
     }
 }
 
-void resize_unhappy(UnHappy *list, int tot_unsadisfied, int rank) {
-    printf("try to resize \n");
-    list = realloc(list, sizeof(UnHappy) * tot_unsadisfied);
+void resize_unhappy(UnHappy **list, int tot_unsadisfied, int local_unsadisfied, int rank) {
 
-    for (int i = 0; i < tot_unsadisfied; ++i) {
-        if (list[i].original_proc != rank) {
-            list[i].allocation_result = INVALID;
-            list[i].original_proc = -1;
-            list[i].x = -1;
-            list[i].y = -1;
-            list[i].destination_proc = -1;
-            list[i].content = EMPTY;
-        }
-    }
+    *list = realloc(*list, tot_unsadisfied * sizeof(UnHappy));
+    default_un_happy_values(*list, local_unsadisfied, tot_unsadisfied);
 }
 
-void send_broadcast_unhappy(UnHappy *list, int rank, int processes, int tot_unsadisfied, MPI_Datatype mpi_unhappy) {
+void send_broadcast_unhappy(UnHappy *list, int rank, int processes, int size, MPI_Datatype mpi_unhappy) {
     for (int i = 0; i < processes; ++i) {
         if (rank != i) {
-            MPI_Send(list, tot_unsadisfied, mpi_unhappy, i, 0, MPI_COMM_WORLD);
+            MPI_Send(list, size, mpi_unhappy, i, 0, MPI_COMM_WORLD);
+            printf("[RANK %d] sended to %d\n",rank,i);
         }
     }
+    //
 }
 
-//TODO bug here!
-void
-receive_broadcast_unhappy(UnHappy *unhappy_list, int unsatisfied, int rank, int processes,
+UnHappy *
+receive_broadcast_unhappy(UnHappy *list, int unsatisfied, int rank, int processes,
                           MPI_Datatype mpi_unhappy) {
+    //printf("i'm receiving \n");
+    int size = unsatisfied * processes;
     UnHappy *temp = (UnHappy *) malloc(sizeof(UnHappy) * unsatisfied);
-    unhappy_list = (UnHappy *) realloc(unhappy_list, sizeof(UnHappy) * unsatisfied * processes);
+    UnHappy *unHappy_total_proc = (UnHappy *) malloc(sizeof(UnHappy) * size);
     MPI_Status status;
     for (int i = 0; i < processes; ++i) {
-        if (i != rank) {
-            MPI_Recv(temp, unsatisfied, mpi_unhappy, i, 0, MPI_COMM_WORLD, &status);
-            memcpy(unhappy_list + (i * unsatisfied), temp, sizeof(UnHappy) * unsatisfied);
+        MPI_Recv(temp, unsatisfied, mpi_unhappy, i, 0, MPI_COMM_WORLD, &status);
+        memcpy(unHappy_total_proc + (i * unsatisfied), temp, sizeof(UnHappy) * unsatisfied);
+    }
+    /*
+    for (int j = 0; j < size; ++j) {
+        printf("unHappy: rank %d pos %d : orig:%d dest:%d all:%c x:%d y:%d leb:%d \n", rank, j,
+               unHappy_total_proc[j].original_proc,
+               unHappy_total_proc[j].destination_proc,
+               decode_allocation(unHappy_total_proc[j].allocation_result), unHappy_total_proc[j].x,
+               unHappy_total_proc[j].y, unHappy_total_proc[j].last_edit_by);
+    }*/
+    free(temp);
+    return unHappy_total_proc;
+}
+
+void
+receive_broadcast_unhappy_in_place(UnHappy *total_proc, int unsatisfied, int rank, int processes,
+                                   MPI_Datatype mpi_unhappy) {
+    //printf("ricezione \n");
+    int size = unsatisfied * processes;
+    UnHappy *temp = (UnHappy *) malloc(sizeof(UnHappy) * size);
+    MPI_Status status;
+    for (int i = 0; i < processes; ++i) {
+        if (rank != i) {
+            MPI_Recv(temp, size, mpi_unhappy, i, 0, MPI_COMM_WORLD, &status);
+            printf("[RANK %d] received from %d\n",rank,i);
+            commit_difference(total_proc, temp, size, i);
+        }
+    }
+/*
+    for (int j = 0; j < size; ++j) {
+        if (total_proc[j].allocation_result != INVALID) {
+            printf("[RANK %d] totalProc-> pos:%d - orig:%d dest:%d all:%c x:%d y:%d leb:%d \n", rank, j,
+                   total_proc[j].original_proc,
+                   total_proc[j].destination_proc,
+                   decode_allocation(total_proc[j].allocation_result), total_proc[j].x,
+                   total_proc[j].y, total_proc[j].last_edit_by);
+        }
+    }*/
+    free(temp);
+}
+
+UnHappy *gather_unhappy(UnHappy *list_to_send, int unsatisfied, int processes,
+                        MPI_Datatype mpi_unhappy) {
+    int size = unsatisfied * processes;
+    UnHappy *unHappy_total_proc = (UnHappy *) malloc(sizeof(UnHappy) * size);
+
+    MPI_Allgather(list_to_send, unsatisfied, mpi_unhappy, unHappy_total_proc, unsatisfied, mpi_unhappy, MPI_COMM_WORLD);
+    return unHappy_total_proc;
+}
+
+
+void commit_difference(UnHappy *total_proc, UnHappy *temp, int size, int rank) {
+    for (int i = 0; i < size; ++i) {
+        if (temp[i].last_edit_by == rank) {
+            total_proc[i].allocation_result = temp[i].allocation_result;
+            total_proc[i].destination_proc = temp[i].destination_proc;
+            total_proc[i].last_edit_by = -1;
         }
     }
 }
@@ -880,23 +1057,24 @@ try_to_move(UnHappy *unhappy_list, City **grid_city, int rank, int unsatisfied, 
         //quelli invalidi è padding
         if (unhappy_list[i].destination_proc == rank && unhappy_list[i].allocation_result == NOT_ALLOCATED) {
             int nx, ny;
-            search_first_empty(grid_city, row, col, &nx, &ny);
+            search_first_empty(grid_city, row, col, &nx, &ny); // ha senso usare la prima cella vuota del processo?
             if (nx != -1 && ny != -1) {
                 grid_city[nx][ny].status = unhappy_list[i].content;
                 grid_city[nx][ny].locked = true;
                 grid_city[nx][ny].satisfacion = 0;
+                /*printf("[RANK %d] è stato spostato (%d,%d) di %d -> (%d,%d) di %d \n", rank, unhappy_list[i].x,
+                       unhappy_list[i].y,
+                       unhappy_list[i].original_proc, nx, ny, rank);*/
                 unhappy_list[i].allocation_result = ALLOCATED;
+                unhappy_list[i].last_edit_by = rank;
             } else {
-                int new_proc = 0;
-                do {
-                    new_proc = rand() % processes;
-                } while (new_proc == rank);
+                int new_proc = rand() % processes;
                 unhappy_list[i].destination_proc = new_proc;
+                unhappy_list[i].last_edit_by = rank;
             }
         }
 
     }
-
 }
 
 void search_first_empty(City **grid_city, int row, int col, int *x, int *y) {
@@ -915,19 +1093,33 @@ void search_first_empty(City **grid_city, int row, int col, int *x, int *y) {
 
 
 int update_with_empty_space(UnHappy *unhappy_list, City **grid_city, int rank, int unsatisfied, int processes) {
-    int size = unsatisfied;
+    int size = unsatisfied * processes;
     int not_allocated = 0;
     for (int i = 0; i < size; ++i) {
         if (unhappy_list[i].allocation_result == ALLOCATED && unhappy_list[i].original_proc == rank) {
-            int i, j;
-            i = unhappy_list[i].x;
+            int x = 0;
+            int j = 0;
+            x = unhappy_list[i].x;
             j = unhappy_list[i].y;
-            grid_city[i][j].status = EMPTY;
-            grid_city[i][j].locked = false;
-            grid_city[i][j].satisfacion = 0;
+            grid_city[x][j].status = EMPTY;
+            grid_city[x][j].locked = false;
+            grid_city[x][j].satisfacion = 0;
         } else if (unhappy_list[i].allocation_result == NOT_ALLOCATED) {
             ++not_allocated;
         }
     }
+    printf("[RANK %d] - non alloc. %d \n", rank, not_allocated);
     return not_allocated;
+}
+
+
+void clear_memory(City **grid, City **cache, int row) {
+    for (int i = 0; i < row; ++i) {
+        free(grid[i]);
+    }
+    for (int i = 0; i < 2; ++i) {
+        free(cache[i]);
+    }
+
+
 }
