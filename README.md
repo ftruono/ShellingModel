@@ -118,15 +118,15 @@ Per ottenere la soddisfazione, partiamo da una serie di immagini che semplifican
 
 Supponiamo di avere questa matrice di dimensioni 6x6, dove il rosso e l'azzurro sono i due agenti.
 
-<img src="mat0" />
+<img src="mat0.png" />
 
 Ora prendiamo in considerazione la riga 5 colonna 2 come indicato in figura
 
-<img src="mat1" />
+<img src="mat1.PNG" />
 
 I punti indicati in nero sono quelli da verificare, supponiamo che questa matrice è stata divisa tra due processi denominati di seguito **P0** - **P1**, come mostrato di seguito
 
-<img src="mat2" />
+<img src="mat2.PNG" />
 
 Dove la linea in giallo rappresenta ciò che è necessario sapere da **P0** affinchè **P1** possa verificare le sue adiacenze, analogo discorso per **P0** che ha bisogno della riga 4.
 Un ulteriore caso è rappresentato invece da un processo che si trova *al centro* quindi che non corrisponde **nè all'ultimo nè al primo**
@@ -196,6 +196,70 @@ UnHappy *unHappy_all_proc = gather_unhappy(unhappy_list, max_unsatisfied, proces
  int size = unsatisfied * processes; //ogni processo avrà la lista complessiva degli insodisfatti.
 
 ```
-Supponendo di avere 3 processi **P0-P1-P2** avremmo una situazione del genere dopo il gathering delle liste.
+Supponendo di avere 3 processi **P0-P1-P2** avremo una situazione del genere dopo il gathering delle liste.
 
-<img src="gather0" />
+<img src="gather0.png" />
+
+Ora che ogni processo sa coloro che **vogliono spostarsi** e anche **dove** ogni processo non deve far altro
+che controllare questa lista e verificare se il **processo di destinazione è lui**
+
+Prende la prima cella libere a la occupa, **senza preoccuparsi di liberare quella antecedente**.
+```C
+search_first_empty(grid_city, row, col, &nx, &ny);
+            if (nx != -1 && ny != -1) {
+                grid_city[nx][ny].status = unhappy_list[i].content;
+                grid_city[nx][ny].locked = true;
+                grid_city[nx][ny].satisfacion = 0;
+                unhappy_list[i].allocation_result = ALLOCATED;
+                unhappy_list[i].last_edit_by = rank;
+            } else {
+                int new_proc = 0;
+                do {
+                    new_proc = rand() % processes;
+                } while (new_proc == rank);
+                unhappy_list[i].destination_proc = new_proc;
+                unhappy_list[i].last_edit_by = rank;
+            }
+```
+L'assegnazione al last_edit_by funziona come da marcatore, quindi ogni processo avrà una lista con le celle marcate.
+Di conseguenza bisogna creare **un' unica lista comune tra tutti i processi**
+Di seguito l'immagine che illustra visivamente il concetto:
+
+<img src="move.png" />
+
+Ogni processo ha provato ad allocare le celle destinate ad esso, in questo caso riuscendoci e **marcandolo con il proprio rank** e il valoce **A**
+per lo stato di allocazione (N: Non allocato A: Allocato)
+La fase di sincronizzazione della lista avviene tramite una reduce e un **operatore ridefinito**, che si occupa proprio di fare il
+join dell'immagine vista sopra e "distribuirlo a tutti i processi"
+
+```C
+//definizione operatore
+ MPI_Op_create((MPI_User_function *) difference_unhappy, false, &mpi_unhappy_difference);
+
+//utilizzo
+//temp=lista del singolo processo
+MPI_Allreduce(temp, total_proc, size, mpi_unhappy, mpi_unhappy_difference, MPI_COMM_WORLD);
+
+//Funzione dell'operatore
+void difference_unhappy(UnHappy *in, UnHappy *inout, int *len, MPI_Datatype *dtype) {
+    for (int i = 0; i < *len; ++i) {
+        if (in[i].last_edit_by != -1 && in[i].allocation_result != INVALID) {
+            inout[i].allocation_result = in[i].allocation_result;
+            inout[i].destination_proc = in[i].destination_proc;
+            inout[i].last_edit_by = in[i].last_edit_by;
+        }
+    }
+}
+
+```
+
+L'ultima fase consiste semplicemente nello scorrere la lista ricevuta e verificare se è stato allocato e il processo originario 
+corrisponde a quello attuale, allora non si fa altro che aggiornare la griglia con le celle vuote. 
+
+# Performance e Scalabilità
+
+I test sono stati eseguiti in locale sul docker e su un cluster di macchine **m4.xlarge** di AWS.
+Il modello di Schelling dato che potrebbe richiedere **tempi di esecuzione differenti anche sullo stesso input** i seguenti grafici sono il
+risultato di una media di esecuzioni.
+
+

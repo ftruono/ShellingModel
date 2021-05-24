@@ -522,10 +522,10 @@ check_nearest(int proc, City **grid_city, City **cache, int row, int col, int sa
 
                 int no_x = i - 1;
                 int no_y = j - 1;
-                if (no_x >= 0 && no_y >= 0) {
+                if (no_x >= 0 && no_y >= 0) { //se rientro nel range verifico sulla matrice locale
                     check_satisfaction_oblique(grid_city, i, j, no_x, no_y, &count_near, &satisf);
                 } else {
-                    if (no_y >= 0 && proc != 0) {
+                    if (no_y >= 0 && proc != 0) { //se non sono andato in una posizione invalida e non sono P0 (P0 sopra di esso non ha nulla) verifico in cache
                         check_satisfaction_oblique_on_cache(grid_city, cache, i, j, 0, no_y, &count_near, &satisf);
                     }
                 }
