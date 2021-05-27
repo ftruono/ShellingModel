@@ -26,7 +26,7 @@ Per comprendere le parti salienti è necessario partire dalle strutture dati uti
 ```C
 
 enum STATUS {
-    RED, BLUE, EMPTY
+    RED, BLUE, EMPTY,PADDING
 };
 
 typedef struct {
@@ -36,7 +36,7 @@ typedef struct {
 } City;
 ```
 
-Questa struttura rappresenta una griglia di dimensioni NXN, quindi sarà una matrice *City[N]N]* ed ogni processo creerà una sottomatrice *City[N/processi][N]* la popolerà e gestirà durante l'arco dell'esecuzione.
+Questa struttura rappresenta una griglia di dimensioni NXN, quindi sarà una matrice *City[N][N]* ed ogni processo creerà una sottomatrice *City[N/processi][N]* la popolerà e gestirà durante l'arco dell'esecuzione.
 Lo status non è altro che il possibile stato in cui si può trovare una cella, come si denota facilmente dall'enumeratore.
 
 Le altre strutture utilizzate sono 
@@ -258,8 +258,26 @@ corrisponde a quello attuale, allora non si fa altro che aggiornare la griglia c
 
 # Performance e Scalabilità
 
-I test sono stati eseguiti in locale sul docker e su un cluster di macchine **m4.xlarge** di AWS.
+I test sono stati eseguiti su un cluster di macchine **m4.xlarge** EC2 di AWS.
 Il modello di Schelling dato che potrebbe richiedere **tempi di esecuzione differenti anche sullo stesso input** i seguenti grafici sono il
 risultato di una media di esecuzioni.
+Altro parere da tenere presente che con griglie molto grandi e poco spazio è molto facile finire in un loop, per questo motivo i test sono stati effettuati
+su griglie che dovrebbero avere spazio a sufficienza per essere risolti oppure con agenti che non dovrebbero avere un grado di soddisfazione molto alto.
+
+Le taglie scelte per i test sono 3: *20x20* - *50x50* - *100x100*
+
+Per avere lo stesso input all'interno del progetto è stata modificata la generazione del numero casuale mettendo come
+seed il rank. Ovviamente ciò comporta anche a una scelta *"meno casuale"* del processo di destinazione 
+
+## Criteri di misurazione
+
+Per avere un misurazione realistica sono state escluse le operazioni non necessarie ai fini del calcolo della risoluzione del problema.
+Per tanto sono state escluse le due stampe della griglia, rispettivamente all'inizio dopo la generazione delle sottomatrici e alla fine dopo aver risolto
+il problema.
+Inoltre sono stati esclusi i tempi di generazioni delle stesse sottomatrici.
+E' stato particolarmente utile il sito *http://nifty.stanford.edu/2014/mccown-schelling-model-segregation/* nel trovare un punto di equilibrio per eseguire 
+i test evitando loop infiniti.
+
+## Scalabilità forte
 
 
