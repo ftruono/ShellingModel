@@ -690,8 +690,8 @@ print_grid(City **grid_city, int row, int col, int rank, int processes, MPI_Data
             MPI_Get_count(&status, mpi_city, &count);
             City *buf = malloc(sizeof(City) * count);
             MPI_Recv(buf, count, mpi_city, i, 0, MPI_COMM_WORLD, &receive);
-            int row = count / col;
-            for (int r = 0; r < row; ++r) {
+            int rows = count / col;
+            for (int r = 0; r < rows; ++r) {
                 for (int j = 0; j < col; ++j) {
                     printf("%d ", buf[r * col + j].status);
                 }
