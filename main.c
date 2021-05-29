@@ -175,8 +175,6 @@ void unsatisfied_max_and_sum(int *unsaf, int *max, int *sum, int processes);
 void padding_grid(City **grid_city, int row, int col, int max_row_number);
 
 
-
-
 int main(int argc, char *argv[]) {
 
     int processes, rank;
@@ -293,7 +291,12 @@ int main(int argc, char *argv[]) {
     } while (tot_unsatisfied > 0);
     MPI_Barrier(MPI_COMM_WORLD);
     stop = MPI_Wtime();
-    printf("[RANK %i] %.3f \n", rank, stop - start);
+    double result = stop - start;
+    printf("[RANK %d] %f \n", rank, result);
+    MPI_Allreduce(&result, &result, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    if (rank == 0) {
+        printf("[RANK 0] %f \n", result);
+    }
     print_grid(grid, startup_info.row, startup_info.col, rank, processes, mpi_city_type);
     clear_memory(grid, cache, startup_info.row);
     MPI_Type_free(&mpi_city_type);
