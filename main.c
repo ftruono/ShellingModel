@@ -174,62 +174,8 @@ void unsatisfied_max_and_sum(int *unsaf, int *max, int *sum, int processes);
 
 void padding_grid(City **grid_city, int row, int col, int max_row_number);
 
-char decode_allocation(enum ALLOCATION allocation) {
-    switch (allocation) {
-        case NOT_ALLOCATED:
-            return 'N';
-        case ALLOCATED:
-            return 'A';
-        case ALREADY_ALLOCATED:
-            return '0';
-        case INVALID:
-            return 'X';
-    }
-}
 
-void main2() {
-    UnHappy already_alloc;
-    already_alloc.allocation_result = ALREADY_ALLOCATED;
-    already_alloc.last_edit_by = -1;
-    already_alloc.destination_proc = 0;
-    already_alloc.x = 5;
-    already_alloc.original_proc = 1;
-    already_alloc.y = 6;
-    already_alloc.content = RED;
 
-    UnHappy not_alloc;
-    not_alloc.allocation_result = NOT_ALLOCATED;
-    not_alloc.last_edit_by = -1;
-    not_alloc.original_proc = 1;
-    not_alloc.destination_proc = 0;
-    not_alloc.x = 4;
-    not_alloc.y = 2;
-    not_alloc.content = RED;
-
-    UnHappy alloc;
-    alloc.allocation_result = ALLOCATED;
-    alloc.original_proc = 1;
-    alloc.last_edit_by = 2;
-    alloc.destination_proc = 1;
-    alloc.x = 1;
-    alloc.y = 0;
-    alloc.content = BLUE;
-
-    UnHappy unHappy[3] = {alloc, not_alloc, not_alloc};
-    UnHappy unHappy1[3] = {not_alloc, alloc, already_alloc};
-    int size = 3;
-    difference_unhappy(unHappy1, unHappy, &size, NULL);
-
-    for (int j = 0; j < size; ++j) {
-
-        printf("[INOUT - RANK ] totalProc-> pos:%d - orig:%d dest:%d all:%c x:%d y:%d leb:%d \n", j,
-               unHappy[j].original_proc,
-               unHappy[j].destination_proc,
-               decode_allocation(unHappy[j].allocation_result), unHappy[j].x,
-               unHappy[j].y, unHappy[j].last_edit_by);
-    }
-
-}
 
 int main(int argc, char *argv[]) {
 
@@ -273,7 +219,6 @@ int main(int argc, char *argv[]) {
         int splitted_red = red_pop / processes;
         int splitted_row = grid_size / processes;
 
-        //printf("%d %d %d \n", splitted_blue, splitted_red, splitted_row);
 
         int excluded = grid_size % processes;
         if (excluded != 0) {
@@ -312,12 +257,7 @@ int main(int argc, char *argv[]) {
     }
     grid = initialize_grid_city(startup_info);
     cache = initialize_cache(startup_info.col);
-    /*printf("rank %d - my grid %d %d \n", rank, startup_info.row, startup_info.col);
-    local_print_grid(grid, startup_info.row, startup_info.col);
-    printf("---------------------------");
-     */
     print_grid(grid, startup_info.row, startup_info.col, rank, processes, mpi_city_type);
-    //print_grid(grid, startup_info.row, startup_info.col, rank, processes, mpi_city_type);
     start = MPI_Wtime();
     MPI_Barrier(MPI_COMM_WORLD);
     do {
@@ -343,7 +283,7 @@ int main(int argc, char *argv[]) {
         do {
             try_to_move(unHappy_all_proc, grid, rank, max_unsatisfied, processes, startup_info.row, startup_info.col);
             unhappy_reduce(unHappy_all_proc, max_unsatisfied, rank, processes, mpi_unhappy, mpi_unhappy_difference);
-            update_with_empty_space(unHappy_all_proc, grid, rank, max_unsatisfied, processes);
+
         } while (update_with_empty_space(unHappy_all_proc, grid, rank, max_unsatisfied, processes) > 0);
 
 
@@ -806,34 +746,13 @@ unhappy_reduce(UnHappy *total_proc, int unsatisfied, int rank, int processes,
     UnHappy *temp = (UnHappy *) malloc(sizeof(UnHappy) * size);
     memcpy(temp, total_proc, sizeof(UnHappy) * size);
 
-
-    for (int j = 0; j < size; ++j) {
-        if (temp[j].allocation_result != INVALID) {
-            printf("[SENDED - RANK %d] totalProc-> pos:%d - orig:%d dest:%d all:%c x:%d y:%d leb:%d \n", rank, j,
-                   temp[j].original_proc,
-                   temp[j].destination_proc,
-                   decode_allocation(temp[j].allocation_result), temp[j].x,
-                   temp[j].y, temp[j].last_edit_by);
-        }
-    }
-
     MPI_Allreduce(temp, total_proc, size, mpi_unhappy, mpi_unhappy_difference, MPI_COMM_WORLD);
-    //reset marker
-    for (int j = 0; j < size; ++j) {
-        if (total_proc[j].allocation_result != INVALID) {
-            printf("[RECEIVED - RANK %d] totalProc-> pos:%d - orig:%d dest:%d all:%c x:%d y:%d leb:%d \n", rank, j,
-                   total_proc[j].original_proc,
-                   total_proc[j].destination_proc,
-                   decode_allocation(total_proc[j].allocation_result), total_proc[j].x,
-                   total_proc[j].y, total_proc[j].last_edit_by);
-        }
-    }
 
+    //reset marker
     for (int j = 0; j < size; ++j) {
         if (total_proc[j].last_edit_by != -1)
             total_proc[j].last_edit_by = -1;
     }
-
     free(temp);
 }
 
@@ -866,7 +785,6 @@ UnHappy *gather_unhappy(UnHappy *list_to_send, int unsatisfied, int processes,
 void
 try_to_move(UnHappy *unhappy_list, City **grid_city, int rank, int unsatisfied, int processes, int row, int col) {
     int size = unsatisfied * processes;
-    int spostati = 0;
     for (int i = 0; i < size; ++i) {
         //quelli invalidi è padding
         if (unhappy_list[i].destination_proc == rank && unhappy_list[i].allocation_result == NOT_ALLOCATED) {
@@ -878,7 +796,6 @@ try_to_move(UnHappy *unhappy_list, City **grid_city, int rank, int unsatisfied, 
                 grid_city[nx][ny].satisfacion = 0;
                 unhappy_list[i].allocation_result = ALLOCATED;
                 unhappy_list[i].last_edit_by = rank;
-                ++spostati;
 
             } else {
                 int new_proc = 0;
@@ -889,7 +806,6 @@ try_to_move(UnHappy *unhappy_list, City **grid_city, int rank, int unsatisfied, 
         }
 
     }
-    printf("[RANK %d] spostati: %d \n", rank, spostati);
 }
 
 void search_first_empty(City **grid_city, int row, int col, int *x, int *y) {
@@ -910,7 +826,6 @@ void search_first_empty(City **grid_city, int row, int col, int *x, int *y) {
 int update_with_empty_space(UnHappy *unhappy_list, City **grid_city, int rank, int unsatisfied, int processes) {
     int size = unsatisfied * processes;
     int not_allocated = 0;
-    int reassigned = 0;
     for (int i = 0; i < size; ++i) {
         if (unhappy_list[i].allocation_result == ALLOCATED && unhappy_list[i].original_proc == rank) {
             int x = 0;
@@ -922,13 +837,10 @@ int update_with_empty_space(UnHappy *unhappy_list, City **grid_city, int rank, i
             grid_city[x][j].satisfacion = 0;
             unhappy_list[i].allocation_result = ALREADY_ALLOCATED;
             unhappy_list[i].last_edit_by = rank;
-            printf("[RANK %d] EMPTY: pos x:%d y:%d \n", rank, x, j);
-            ++reassigned;
         } else if (unhappy_list[i].allocation_result == NOT_ALLOCATED) {
             ++not_allocated;
         }
     }
-    printf("[RANK %d] riassegnati con vuoto: %d \n", rank, reassigned);
     return not_allocated;
 }
 
