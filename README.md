@@ -335,7 +335,7 @@ I test sono stati ripetuti più volte per ogni incremento di processori, i grafi
 
 Di seguito i risultati in termini di tempo al variare del numero di processori.
 
-<img src="20x20.png />
+<img src="20x20.png" />
 
 <img src="50x50.png" />
 
