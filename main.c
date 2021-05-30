@@ -292,10 +292,10 @@ int main(int argc, char *argv[]) {
     MPI_Barrier(MPI_COMM_WORLD);
     stop = MPI_Wtime();
     double result = stop - start;
-    //printf("[RANK %d] %f \n", rank, result);
+    printf("[RANK %d] %f \n", rank, result);
     MPI_Allreduce(&result, &result, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     if (rank == 0) {
-        printf("[RANK 0] %f \n", result);
+        printf("[RANK 0] %f \n", result/processes);
     }
     print_grid(grid, startup_info.row, startup_info.col, rank, processes, mpi_city_type);
     clear_memory(grid, cache, startup_info.row);
