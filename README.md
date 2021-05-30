@@ -264,7 +264,7 @@ risultato di una media di esecuzioni.
 Altro parere da tenere presente che con griglie molto grandi e poco spazio è molto facile finire in un loop, per questo motivo i test sono stati effettuati
 su griglie che dovrebbero avere spazio a sufficienza per essere risolti oppure con agenti che non dovrebbero avere un grado di soddisfazione molto alto.
 
-Le taglie scelte per i test sono 3: *20x20* - *50x50* - *100x100*
+Le taglie scelte per i test sono 3: *20x20* - *50x50* - *80x80*
 
 Per avere lo stesso input all'interno del progetto è stata modificata la generazione del numero casuale mettendo come
 seed il rank. Ovviamente ciò comporta anche a una scelta *"meno casuale"* del processo di destinazione 
@@ -278,6 +278,96 @@ Inoltre sono stati esclusi i tempi di generazioni delle stesse sottomatrici.
 E' stato particolarmente utile il sito *http://nifty.stanford.edu/2014/mccown-schelling-model-segregation/* nel trovare un punto di equilibrio per eseguire 
 i test evitando loop infiniti.
 
+Inoltre è stato creato un hfile per ogni nodo del cluster, specificando esclusivamente il numero di slots
+```bash
+172.31.52.73 slots=4
+172.31.55.87 slots=4
+172.31.57.40 slots=4
+172.31.62.63 slots=4
+
+```
+
+## Compilazione - Esecuzione e parametri
+
+Dato che il programma non presenta librerie e/o più file la compilazione si esegue con un semplice comando.
+
+```bash
+mpicc main.c -o schelling
+```
+L'esecuzione avviene tramite **mpirun**, specificando l'hostfile precedentemente creato
+
+```bash
+mpirun -np [N_PROC] --hostfile hfile ./schelling [SIZE] [EMPTY_CELL] [BLU AGENT] [SATISFACTION] 
+```
+
+E' anche possibile lanciarlo senza argomenti, ma per una questione di comodità in fase di benchmark è stata utilizzata la versione
+con gli argomenti.
+
 ## Scalabilità forte
+
+Per i test sulla scalabilità forte è stato scelto un input di **20x20** - **50x50** - **80x80** - **200x200**
+Il test su 20x20 è stato impostato con i seguenti parametri:
+*Size*: 20
+*Empty*: 150
+*Blue* 140
+*Satisfaction* 60
+
+Il test su 50x50 è stato impostato con i seguenti parametri:
+*Size*: 50
+*Empty*: 500
+*Blue*: 1000
+*Satisfaction*: 50
+
+Il test su 80x80 è stato impostato con i seguenti parametri:
+*Size*:80
+*Empty*: 1280
+*Blue*: 2500
+*Satisfaction*: 60
+
+Il test su 200x200 è stato impostato con i seguenti parametri:
+
+*Size*:200
+*Empty*: 9000
+*Blue*: 16000
+*Satisfaction*: 60
+
+I test sono stati ripetuti più volte per ogni incremento di processori, i grafici risultanti sono una media.
+
+Di seguito i risultati in termini di tempo al variare del numero di processori.
+
+<img src="20x20.png />
+
+<img src="50x50.png" />
+
+<img src="80x80.png" />
+
+<img src="200x200.png" />
+
+Come si nota nell'immagine con dimensioni 20x20 non **c'è nessun miglioramento delle performance** anzi un decadimento di quest'ultime dovute
+ad un inutile overhead di comunicazione della lista sincronizzata tra i vari processi.
+Le matrici con una taglia minore di 20 presentano un decadimento delle prestazioni ma non così eccessivo.
+
+La situazione cambia notevolmente se si eseguono istanze con una griglia poco più grande, come nel caso di **50x50** e **80x80**,
+dove si ha un netto miglioramento delle prestazioni dal 3 processore in poi.
+Nel caso di **200x200* si ha un miglioramento iniziale molto alto, ma con l'aumentare dei processori il miglioramento è poco considerevole,
+soprattutto dal 8° processore in poi.
+
+
+##Scalabilità debole
+
+Alcuni dei test effettuati per la scalabilità debole sono validi anche per la scalabilità forte, dato che la divisione delle matrici è data
+da **N/P**, dove **N** rappresenta il numero di righe e **P** il numero di processori.
+Questo significa che test 
+
+```
+  P0=20/2=10
+  P1=20/2=10 
+
+```
+
+Nel caso di size **20** e 2 processori avranno esattamente la stessa matrice da gestire e così per altri casi eseguiti in precedenza.
+
+I test effettuati variando le dimensioni della matrice per avere costantemente 100 elementi 
+
 
 
