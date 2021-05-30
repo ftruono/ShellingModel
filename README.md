@@ -1,5 +1,4 @@
-| Schelling Model | Francesco Truono | 30/05/2021 |
-| --- | --- | --- | --- |
+| Schelling's Model | Francesco Truono | 30/05/2021 |
 
 # Soluzione Proposta
 
