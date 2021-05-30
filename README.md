@@ -357,7 +357,7 @@ soprattutto dal 8° processore in poi.
 
 Alcuni dei test effettuati per la scalabilità debole sono validi anche per la scalabilità forte, dato che la divisione delle matrici è data
 da **N/P**, dove **N** rappresenta il numero di righe e **P** il numero di processori.
-Questo significa che test 
+Un esempio per esempio può essere la taglia 20x20 su due processori,che testa anche la scalabilità debole.
 
 ```
   P0=20/2=10
@@ -365,9 +365,16 @@ Questo significa che test
 
 ```
 
-Nel caso di size **20** e 2 processori avranno esattamente la stessa matrice da gestire e così per altri casi eseguiti in precedenza.
+Visto che il programma usa matrici quadratiche e ciò renderebbe impossibile questo test,è stata fatta una modifica al programma in modo tale
+da prevedere anche l'input delle colonne.
+Il file si chiama *weak.c* e prevede gli stessi input precedenti con l'aggiunta della colonna. 
 
-I test effettuati variando le dimensioni della matrice per avere costantemente 100 elementi 
+```bash
+mpirun -np [N_PROC] --hostfile hfile ./weak [ROWS] [COLS] [EMPTY_CELL] [BLU AGENT] [SATISFACTION] 
+```
+
+I test effettuati variano le dimensioni delle colonne in modo tale da avere costantemente gli stessi elementi gestiti da ogni matrice.
+
 
 
 
