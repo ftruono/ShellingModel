@@ -51,7 +51,7 @@ MPI_Datatype make_type_for_city();
 
 MPI_Datatype make_type_for_unhappy();
 
-void get_input_from_terminal(int *grid_size, int *red_pop, int *blue_pop, int *empty, int *satisfatcion);
+void get_input_from_terminal(int *grid_size, int *col_size, int *red_pop, int *blue_pop, int *empty, int *satisfatcion);
 
 void handle_input(char *arg, int *store, int max_size, bool isGrid);
 
@@ -197,38 +197,39 @@ int main(int argc, char *argv[]) {
     MPI_Datatype mpi_unhappy = make_type_for_unhappy();
     MPI_Op_create((MPI_User_function *) difference_unhappy, false, &mpi_unhappy_difference);
     if (rank == 0) {
-        int grid_size, red_pop, blue_pop, satisfaction, empty;
+        int row_size, col_size, red_pop, blue_pop, satisfaction, empty;
 
-        if (argc < 5) {
-            get_input_from_terminal(&grid_size, &red_pop, &blue_pop, &empty, &satisfaction);
+        if (argc < 6) {
+            get_input_from_terminal(&row_size,&col_size, &red_pop, &blue_pop, &empty, &satisfaction);
         } else {
             int size = 0;
-            handle_input(argv[1], &grid_size, 0, true);
-            size = grid_size * grid_size;
-            handle_input(argv[2], &empty, size, false);
+            handle_input(argv[1], &row_size, 0, true);
+            handle_input(argv[2], &col_size, 0, true);
+            size = row_size * col_size;
+            handle_input(argv[3], &empty, size, false);
             size -= empty;
-            handle_input(argv[3], &blue_pop, size, false);
+            handle_input(argv[4], &blue_pop, size, false);
             red_pop = size - blue_pop;
-            handle_input(argv[4], &satisfaction, 100, false);
+            handle_input(argv[5], &satisfaction, 100, false);
         }
 
-        //Assunzione che processes < grid_size (P<N)
+        //Assunzione che processes < row_size (P<N)
         int splitted_blue = blue_pop / processes;
         int splitted_red = red_pop / processes;
-        int splitted_row = grid_size / processes;
+        int splitted_row = row_size / processes;
 
 
-        int excluded = grid_size % processes;
+        int excluded = row_size % processes;
         if (excluded != 0) {
             int assigned_processes = rand() % processes;
             int temp_proc_row = splitted_row + excluded;
 
-            startup_info = create_initialize_message(assigned_processes == 0 ? temp_proc_row : splitted_row, grid_size,
+            startup_info = create_initialize_message(assigned_processes == 0 ? temp_proc_row : splitted_row, col_size,
                                                      satisfaction, splitted_blue,
                                                      splitted_red);
             for (int i = 1; i < processes; ++i) {
                 send_startup_information(
-                        create_initialize_message(i == assigned_processes ? temp_proc_row : splitted_row, grid_size,
+                        create_initialize_message(i == assigned_processes ? temp_proc_row : splitted_row, col_size,
                                                   satisfaction, splitted_blue,
                                                   splitted_red),
                         i,
@@ -238,12 +239,12 @@ int main(int argc, char *argv[]) {
 
 
         } else { //nessun resto nella divisione
-            startup_info = create_initialize_message(splitted_row, grid_size, satisfaction, splitted_blue,
+            startup_info = create_initialize_message(splitted_row, col_size, satisfaction, splitted_blue,
                                                      splitted_red); // for 0° process
 
             for (int i = 1; i < processes; ++i) {
                 send_startup_information(
-                        create_initialize_message(splitted_row, grid_size, satisfaction, splitted_blue, splitted_red),
+                        create_initialize_message(splitted_row, col_size, satisfaction, splitted_blue, splitted_red),
                         i,
                         mpi_initialize_message_type
                 );
@@ -292,7 +293,7 @@ int main(int argc, char *argv[]) {
     MPI_Barrier(MPI_COMM_WORLD);
     stop = MPI_Wtime();
     double result = stop - start;
-    //printf("[RANK %d] %f \n", rank, result);
+    printf("[RANK %d] %f \n", rank, result);
     MPI_Allreduce(&result, &result, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     if (rank == 0) {
         printf("[RANK 0] %f \n", result);
@@ -361,13 +362,17 @@ MPI_Datatype make_type_for_unhappy() {
 }
 
 
-void get_input_from_terminal(int *grid_size, int *red_pop, int *blue_pop, int *empty, int *satisfatcion) {
+void
+get_input_from_terminal(int *grid_size, int *col_size, int *red_pop, int *blue_pop, int *empty, int *satisfatcion) {
     int size = 0;
-    char grid_string[10], blue_string[3], empty_string[3], satisfaction_string[3];
-    printf("Size of grid:\n");
+    char grid_string[10], col_string[10], blue_string[3], empty_string[3], satisfaction_string[3];
+    printf("Rows of grid:\n");
     scanf("%s", grid_string);
     handle_input(grid_string, grid_size, 0, true);
-    size = *grid_size * *grid_size;
+    printf("Cols of grid:\n");
+    scanf("%s", col_string);
+    handle_input(col_string, col_size, 0, true);
+    size = *grid_size * *col_size;
 
     printf("Empty space in %%  [0-%d] \n", size);
     scanf("%s", empty_string);
